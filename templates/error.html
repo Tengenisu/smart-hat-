@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error - Smart Hat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="error-page">
+    <div class="error-container">
+        <h1>System Error</h1>
+        <div class="error-message">
+            <p>{{ error }}</p>
+        </div>
+        <div class="error-actions">
+            <a href="/" class="btn primary">Return to Home</a>
+            <button onclick="location.reload()" class="btn secondary">Retry</button>
+        </div>
+    </div>
+</body>
+</html>
