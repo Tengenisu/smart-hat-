@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Hat for the Blind</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Smart Hat for the Blind</h1>
+        <p class="subtitle">Real-time object detection and audio assistance</p>
+    </header>
+
+    <main>
+        <section class="video-section">
+            <h2>Camera Feed</h2>
+            <div class="video-container">
+                <img src="{{ url_for('video_feed') }}" alt="Live camera feed with object detection">
+            </div>
+        </section>
+
+        <section class="controls-section">
+            <h2>Controls</h2>
+            <div class="controls">
+                <button id="toggleAudio" class="btn primary">Mute Audio</button>
+                <button id="emergencyBtn" class="btn emergency">Emergency Contact</button>
+                <div class="sensitivity-control">
+                    <label for="detectionThreshold">Detection Sensitivity:</label>
+                    <input type="range" id="detectionThreshold" min="0" max="100" value="50">
+                </div>
+                <div class="emergency-settings">
+                    <label for="emergencyContact">Emergency Contact:</label>
+                    <input type="text" id="emergencyContact" value="911" placeholder="Phone number">
+                    <button id="saveEmergencyContact" class="btn secondary">Save</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="detection-section">
+            <h2>Detected Objects</h2>
+            <div id="detectionList" class="detection-list">
+                <p class="no-detection">Waiting for detections...</p>
+            </div>
+        </section>
+
+        <section class="status-section">
+            <h2>System Status</h2>
+            <div class="status-container">
+                <div class="status-item">
+                    <span class="status-label">Camera:</span>
+                    <span id="cameraStatus" class="status-value active">Active</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Audio:</span>
+                    <span id="audioStatus" class="status-value active">Enabled</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Connection:</span>
+                    <span id="connectionStatus" class="status-value">Connecting...</span>
+                </div>
+            </div>
+            <div id="emergencyLog" class="emergency-log">
+                <!-- Emergency alerts will appear here -->
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2025 Smart Hat Project</p>
+    </footer>
+
+    <script>
+        // Connect to WebSocket server
+        const socket = io();
+        const detectionList = document.getElementById('detectionList');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const audioStatus = document.getElementById('audioStatus');
+        const toggleAudioBtn = document.getElementById('toggleAudio');
+        const emergencyBtn = document.getElementById('emergencyBtn');
+        const detectionThreshold = document.getElementById('detectionThreshold');
+        const emergencyContact = document.getElementById('emergencyContact');
+        const saveEmergencyContact = document.getElementById('saveEmergencyContact');
+        const emergencyLog = document.getElementById('emergencyLog');
+
+        let audioEnabled = true;
+
+        // WebSocket connection status
+        socket.on('connect', () => {
+            connectionStatus.textContent = 'Connected';
+            connectionStatus.className = 'status-value active';
+        });
+
+        socket.on('disconnect', () => {
+            connectionStatus.textContent = 'Disconnected';
+            connectionStatus.className = 'status-value inactive';
+        });
+
+        // Handle detection updates from server
+        socket.on('detection_update', (detections) => {
+            if (detections && detections.length > 0) {
+                let html = '';
+
+                detections.forEach(detection => {
+                    const directionIcon = getDirectionIcon(detection.direction);
+                    html += `
+                        <div class="detection-item">
+                            <span class="detection-type">${detection.type}</span>
+                            <span class="detection-info">
+                                ${directionIcon} ${detection.direction},
+                                ${detection.distance.toFixed(1)}m
+                                (${Math.round(detection.confidence * 100)}%)
+                            </span>
+                        </div>
+                    `;
+                });
+
+                detectionList.innerHTML = html;
+            } else {
+                detectionList.innerHTML = '<p class="no-detection">No objects detected</p>';
+            }
+        });
+
+        // Handle audio status updates
+        socket.on('audio_status', (data) => {
+            audioEnabled = data.enabled;
+            if (audioEnabled) {
+                toggleAudioBtn.textContent = 'Mute Audio';
+                audioStatus.textContent = 'Enabled';
+                audioStatus.className = 'status-value active';
+            } else {
+                toggleAudioBtn.textContent = 'Enable Audio';
+                audioStatus.textContent = 'Disabled';
+                audioStatus.className = 'status-value inactive';
+            }
+        });
+
+        // Handle threshold status updates
+        socket.on('threshold_status', (data) => {
+            detectionThreshold.value = data.threshold;
+        });
+
+        // Handle emergency alerts
+        socket.on('emergency_triggered', (data) => {
+            const alertElement = document.createElement('div');
+            alertElement.className = 'emergency-alert';
+            alertElement.innerHTML = `
+                <strong>Emergency Alert</strong>
+                <p>Alert sent to ${data.contact} at ${data.time}</p>
+            `;
+            emergencyLog.prepend(alertElement);
+
+            // Remove old alerts if there are too many
+            if (emergencyLog.children.length > 5) {
+                emergencyLog.removeChild(emergencyLog.lastChild);
+            }
+        });
+
+        // Toggle audio button
+        toggleAudioBtn.addEventListener('click', function() {
+            if (audioEnabled) {
+                fetch('/disable_audio', { method: 'POST' });
+            } else {
+                fetch('/enable_audio', { method: 'POST' });
+            }
+        });
+
+        // Emergency button
+        emergencyBtn.addEventListener('click', function() {
+            if (confirm('Do you want to send an emergency alert?')) {
+                fetch('/trigger_emergency', { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message);
+                    });
+            }
+        });
+
+        // Detection threshold
+        detectionThreshold.addEventListener('change', function(e) {
+            const threshold = e.target.value;
+            fetch('/set_threshold', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ threshold: threshold }),
+            });
+        });
+
+        // Save emergency contact
+        saveEmergencyContact.addEventListener('click', function() {
+            const contact = emergencyContact.value.trim();
+            if (contact) {
+                fetch('/set_emergency_contact', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ contact: contact }),
+                });
+                alert(`Emergency contact set to: ${contact}`);
+            }
+        });
+
+        // Helper function to get direction icon
+        function getDirectionIcon(direction) {
+            switch(direction) {
+                case 'left':
+                    return '←';
+                case 'right':
+                    return '→';
+                default:
+                    return '↑';
+            }
+        }
+    </script>
+</body>
+</html>
